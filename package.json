@@ -7,6 +7,7 @@
   "main": "index.ts",
   "files": [
     "index.ts",
+    "types.ts",
     "README.md"
   ],
   "pi": {
@@ -15,7 +16,7 @@
     ]
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*"
+    "@mariozechner/pi-coding-agent": ">=0.70.0"
   },
   "keywords": [
     "pi-package",
@@ -29,5 +30,8 @@
   "repository": {
     "type": "git",
     "url": "git@github.com:bowfeng/pi-show.git"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
   }
 }
