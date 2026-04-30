@@ -35,11 +35,3 @@ Then run `/reload` to activate the extension.
 - **Tools** — all tools (built-in and custom)
 - **Themes** — all available themes and their paths
 
-## Colors
-
-Uses the active theme for formatting:
-- `accent` — command/tool names (bold)
-- `mdCode` — paths, counts, labels
-- `muted` — source types, brackets, bullets
-- `success` — provider names
-- `error` — not-found queries

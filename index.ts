@@ -31,7 +31,6 @@ const SEPARATOR = " — ";
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 type FoundItem =
-	| { kind: "builtin"; item: SlashCommandInfo }
 	| { kind: "command"; item: SlashCommandInfo }
 	| { kind: "tool"; item: ImportedToolInfo };
 
@@ -97,6 +96,7 @@ function groupCommands(commands: SlashCommandInfo[]): GroupedCommands {
 			if (source === "extension") acc.builtin.push(cmd);
 			else if (source === "skill") acc.skills.push(cmd);
 			else if (source === "prompt") acc.prompts.push(cmd);
+			else console.warn(`[pi-show] Unknown command source: "${source}"`);
 			return acc;
 		},
 		{ builtin: [], skills: [], prompts: [] },
@@ -145,7 +145,7 @@ function showOverview(
 		return result;
 	};
 
-	lines.push(...sectionLines("Commands", grouped.builtin));
+	lines.push(...sectionLines("Commands", grouped.builtin, grouped.builtin.length));
 	lines.push(...sectionLines("Skills", grouped.skills, grouped.skills.length));
 	lines.push(...sectionLines("Prompt Templates", grouped.prompts, grouped.prompts.length));
 
@@ -162,8 +162,7 @@ function showOverview(
 	if (themes.length > 0) {
 		lines.push("", `## **Themes** (${themes.length})`);
 		for (const theme of themes) {
-			const pathPart = theme.path ? `${theme.name}${SEPARATOR}${theme.path}` : `${theme.name} [built-in]`;
-			lines.push(`- ${pathPart}`);
+			lines.push(`- \`${theme.name}\`${theme.path ? SEPARATOR + theme.path : " [built-in]"}`);
 		}
 	}
 
@@ -173,7 +172,7 @@ function showOverview(
 // ─── Lookup ────────────────────────────────────────────────────────────────────
 
 function wrapCommand(cmd: SlashCommandInfo): FoundItem {
-	return { kind: cmd.source === "extension" ? "builtin" : "command", item: cmd };
+	return { kind: "command", item: cmd };
 }
 
 function findByName(commands: SlashCommandInfo[], tools: ImportedToolInfo[], query: string): FoundItem | undefined {
@@ -265,7 +264,7 @@ function showCandidates(matches: FoundItem[], width: number): string {
 	for (const match of matches) {
 		const name = match.item.name;
 		const desc = match.item.description;
-		const kindLabel = match.kind === "tool" ? "tool" : match.item.source;
+		const kindLabel = match.kind === "tool" ? "tool" : SOURCE_LABELS[match.item.source as CommandSource] ?? match.item.source;
 		if (desc) {
 			const line = `\`${name}\` [${kindLabel}]${SEPARATOR}${desc}`;
 			const wrapped = wrapPlain(line, width, CONTINUATION_INDENT);
@@ -324,12 +323,54 @@ function showNotFound(
 	if (themes.length > 0) {
 		lines.push(`**Themes** (${themes.length})`);
 		for (const theme of themes) {
-			const pathPart = theme.path ? `${theme.name}${SEPARATOR}${theme.path}` : `${theme.name} [built-in]`;
-			lines.push(`- ${pathPart}`);
+			lines.push(`- \`${theme.name}\`${theme.path ? SEPARATOR + theme.path : " [built-in]"}`);
 		}
 	}
 
 	return lines.join("\n");
+}
+
+// ─── Extended handler (extracted for testability) ─────────────────────────────
+
+function handleShow(
+	_args: string,
+	ctx: ExtensionCommandContext,
+	api: ExtensionAPI,
+): string {
+	const commands = api.getCommands();
+	const tools = api.getAllTools() as ImportedToolInfo[];
+	const themes: CoreThemeInfo[] = ctx.ui.getAllThemes?.() ?? [];
+	const width = Math.max(MIN_DESC_WIDTH, getTerminalWidth() - WIDTH_PADDING);
+	const model = extractModelInfo(ctx.model as Model | undefined);
+
+	const query = _args.trim().toLowerCase();
+
+	if (!query) {
+		return showOverview(commands, tools, themes, model, width);
+	}
+
+	const found = findByName(commands, tools, query);
+	if (found) {
+		return showDetail(found, width);
+	}
+
+	const matches = findPartialMatches(commands, tools, query);
+	if (matches.length === 1) {
+		return showDetail(matches[0], width);
+	}
+
+	const themeMatches = themes.filter((theme) => theme.name.toLowerCase().includes(query));
+	if (themeMatches.length === 1) {
+		return showThemeDetail(themeMatches[0]);
+	}
+	if (themeMatches.length > 0) {
+		return showThemeCandidates(themeMatches);
+	}
+	if (matches.length > 0) {
+		return showCandidates(matches, width);
+	}
+
+	return showNotFound(query, commands, tools, themes, width);
 }
 
 // ─── Extension Entry Point ─────────────────────────────────────────────────────
@@ -337,44 +378,8 @@ function showNotFound(
 export default function piShowExtension(pi: ExtensionAPI): void {
 	pi.registerCommand("show", {
 		description: "Show pi-coding-agent info (commands, skills, prompts, tools, themes, model)",
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		handler: async (_args: string, ctx: any) => {
-			const typedCtx = ctx as ExtensionCommandContext;
-			const commands = pi.getCommands();
-			const tools = pi.getAllTools() as ImportedToolInfo[];
-			const themes: CoreThemeInfo[] = typedCtx.ui.getAllThemes?.() ?? [];
-			const width = getTerminalWidth() - WIDTH_PADDING;
-			const model = extractModelInfo(typedCtx.model as Model | undefined);
-
-			const query = _args.trim().toLowerCase();
-
-			let result: string;
-
-			if (!query) {
-				result = showOverview(commands, tools, themes, model, width);
-			} else {
-				const found = findByName(commands, tools, query);
-				if (found) {
-					result = showDetail(found, width);
-				} else {
-					const matches = findPartialMatches(commands, tools, query);
-					if (matches.length === 1) {
-						result = showDetail(matches[0], width);
-					} else {
-						const themeMatches = themes.filter((theme) => theme.name.toLowerCase().includes(query));
-						if (themeMatches.length === 1) {
-							result = showThemeDetail(themeMatches[0]);
-						} else if (themeMatches.length > 0) {
-							result = showThemeCandidates(themeMatches);
-						} else if (matches.length > 0) {
-							result = showCandidates(matches, width);
-						} else {
-							result = showNotFound(query, commands, tools, themes, width);
-						}
-					}
-				}
-			}
-
+		handler: async (_args: string, ctx: unknown) => {
+			const result = handleShow(_args, ctx as ExtensionCommandContext, pi);
 			pi.sendMessage(
 				{
 					customType: "pi-show",
