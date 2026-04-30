@@ -3,27 +3,22 @@
   "version": "0.1.0",
   "description": "Display pi-coding-agent state: commands, skills, prompts, tools, themes, and model info",
   "type": "module",
-  "main": "./index.ts",
-  "exports": {
-    ".": {
-      "import": "./index.ts"
-    }
-  },
+  "private": false,
+  "main": "index.ts",
+  "files": [
+    "index.ts",
+    "README.md"
+  ],
   "pi": {
     "extensions": [
       "./index.ts"
     ]
   },
-  "dependencies": {
-    "@mariozechner/pi-coding-agent": ">=0.70.0"
-  },
-  "scripts": {
-    "clean": "echo 'nothing to clean'",
-    "build": "echo 'nothing to build'",
-    "check": "echo 'nothing to check'"
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
   },
   "keywords": [
-    "pi",
+    "pi-package",
     "coding-agent",
     "extension",
     "show",
@@ -34,8 +29,5 @@
   "repository": {
     "type": "git",
     "url": "git@github.com:bowfeng/pi-show.git"
-  },
-  "engines": {
-    "node": ">=20.6.0"
   }
 }
