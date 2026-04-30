@@ -1,0 +1,41 @@
+{
+  "name": "pi-show",
+  "version": "0.1.0",
+  "description": "Display pi-coding-agent state: commands, skills, prompts, tools, themes, and model info",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": {
+      "import": "./index.ts"
+    }
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": ">=0.70.0"
+  },
+  "scripts": {
+    "clean": "echo 'nothing to clean'",
+    "build": "echo 'nothing to build'",
+    "check": "echo 'nothing to check'"
+  },
+  "keywords": [
+    "pi",
+    "coding-agent",
+    "extension",
+    "show",
+    "info"
+  ],
+  "author": "bowfeng",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:bowfeng/pi-show.git"
+  },
+  "engines": {
+    "node": ">=20.6.0"
+  }
+}
