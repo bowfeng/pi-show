@@ -124,7 +124,7 @@ function showOverview(
 	width: number,
 ): string {
 	const lines: string[] = [
-		"### **pi-coding-agent Information**",
+		"## **pi-coding-agent Information**",
 		"",
 		model
 			? `**Model:** \`${model.id}\` (${model.provider})`
@@ -135,7 +135,7 @@ function showOverview(
 
 	const sectionLines = (sectionName: string, items: SlashCommandInfo[], count?: number) => {
 		if (items.length === 0) return [];
-		const result: string[] = ["", `### **${sectionName}**${count !== undefined ? ` (${count})` : ""}`];
+		const result: string[] = ["", `## **${sectionName}**${count !== undefined ? ` (${count})` : ""}`];
 		for (const cmd of items) {
 			const desc = cmd.description ?? "";
 			const line = `- \`${cmd.name}\`${desc ? SEPARATOR + desc : ""}`;
@@ -150,7 +150,7 @@ function showOverview(
 	lines.push(...sectionLines("Prompt Templates", grouped.prompts, grouped.prompts.length));
 
 	if (tools.length > 0) {
-		lines.push("", `### **Tools** (${tools.length})`);
+		lines.push("", `## **Tools** (${tools.length})`);
 		for (const tool of tools) {
 			const desc = tool.description ?? "";
 			const line = `\`${tool.name}\`${desc ? SEPARATOR + desc : ""}`;
@@ -160,7 +160,7 @@ function showOverview(
 	}
 
 	if (themes.length > 0) {
-		lines.push("", `### **Themes** (${themes.length})`);
+		lines.push("", `## **Themes** (${themes.length})`);
 		for (const theme of themes) {
 			const pathPart = theme.path ? `${theme.name}${SEPARATOR}${theme.path}` : `${theme.name} [built-in]`;
 			lines.push(`- ${pathPart}`);
@@ -201,7 +201,7 @@ function findPartialMatches(commands: SlashCommandInfo[], tools: ImportedToolInf
 
 function showThemeDetail(themeInfo: CoreThemeInfo): string {
 	const lines: string[] = [];
-	lines.push(`### **Theme:** \`${themeInfo.name}\``);
+	lines.push(`## **Theme:** \`${themeInfo.name}\``);
 	lines.push("");
 	if (themeInfo.path) {
 		lines.push(`**Path:** \`${themeInfo.path}\``);
@@ -227,7 +227,7 @@ function showDetail(item: FoundItem, width: number): string {
 		const cmd = item.item;
 		const label = SOURCE_LABELS[cmd.source as CommandSource] ?? "Unknown";
 		const lines: string[] = [
-			`### **${label}:** \`${cmd.name}\``,
+			`## **${label}:** \`${cmd.name}\``,
 			"",
 		];
 		if (cmd.description) {
@@ -244,7 +244,7 @@ function showDetail(item: FoundItem, width: number): string {
 
 	const tool = item.item;
 	const lines: string[] = [
-		`### **Tool:** \`${tool.name}\``,
+		`## **Tool:** \`${tool.name}\``,
 		"",
 	];
 	if (tool.description) {
