@@ -1,6 +1,6 @@
 {
   "name": "pi-show",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Display pi-coding-agent state: commands, skills, prompts, tools, themes, and model info",
   "type": "module",
   "private": false,
