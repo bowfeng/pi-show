@@ -16,6 +16,7 @@ Then run `/reload` to activate the extension.
 |---------|-------------|
 | `/show` | Overview of all resources |
 | `/show <name>` | Detailed info about a specific resource |
+| `/show agent_context` | List agent context files (AGENTS.md, CLAUDE.md) |
 
 ### Examples
 
@@ -24,6 +25,8 @@ Then run `/reload` to activate the extension.
 /show read                     # Show details for the read tool
 /show ls                       # Show details for the ls tool
 /show git                      # Partial match search
+/show agent_context            # Show agent context files
+/show agent_context AGENTS.md  # Show content of a specific agent file
 ```
 
 ## What it shows
@@ -34,4 +37,5 @@ Then run `/reload` to activate the extension.
 - **Prompt Templates** — prompt templates available
 - **Tools** — all tools (built-in and custom)
 - **Themes** — all available themes and their paths
+- **Agent Context Files** — AGENTS.md and CLAUDE.md files from workspace, ancestor directories, and global `~/.pi/`
 

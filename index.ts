@@ -6,6 +6,7 @@
  * Usage:
  *   /show                  — Overview of all resources
  *   /show <name>           — Detailed info about a specific command, skill, prompt, tool, or theme
+ *   /show agent_context    — List agent context files (AGENTS.md, CLAUDE.md) contributing to the system prompt
  *
  * Install: pi install npm:pi-show
  * Then: /reload to activate
@@ -27,6 +28,12 @@ const WIDTH_PADDING = 4;
 const MIN_DESC_WIDTH = 20;
 const CONTINUATION_INDENT = "  ";
 const SEPARATOR = " — ";
+
+// ─── Agent context files cache ───────────────────────────────────────────────
+// Populated by before_agent_start event (structured). If undefined, parsed
+// from ctx.getSystemPrompt() in the handler (fallback, works without event).
+type AgentFileInfo = { path: string; level: string; content: string };
+let cachedAgentFiles: AgentFileInfo[] | undefined;
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -103,6 +110,49 @@ function groupCommands(commands: SlashCommandInfo[]): GroupedCommands {
 	);
 }
 
+// ─── Agent file helpers ────────────────────────────────────────────────────────
+
+function inferAgentFileLevel(filePath: string): string {
+	if (filePath.includes("/.pi/")) return "Global";
+	return "Ancestor";
+}
+
+function parseAgentFiles(systemPrompt: string): AgentFileInfo[] {
+	const files: AgentFileInfo[] = [];
+	const section = systemPrompt.match(/# Project Context\n\n([\s\S]*?)(?=\nCurrent date:|$)/);
+	if (!section) return files;
+
+	const contentBlock = section[1];
+	// Match file headers `## /path` (Unix) or `## C:\path` (Windows).
+	const fileRegex = /## ((?:\/|\w:)[^\n]+)\n\n([\s\S]*?)(?=\n## (?:\/|\w:)|\nCurrent date:|\nCurrent working directory:|$)/g;
+	let match;
+
+	while ((match = fileRegex.exec(contentBlock)) !== null) {
+		let content = match[2].trim();
+		// Strip the injected skills section that leaks into the last file's content.
+		content = content.replace(/\n\nThe following skills provide specialized instructions[\s\S]*$/, "");
+		files.push({
+			path: match[1].trim(),
+			content,
+			level: inferAgentFileLevel(match[1].trim()),
+		});
+	}
+
+	return files;
+}
+
+function inferLevelWithCwd(file: AgentFileInfo, cwd: string): string {
+	if (file.path === cwd) return "Workspace";
+	return file.level;
+}
+
+// ─── Agent list renderer (shared by showOverview, showAgentOverview,
+//     showAgentCandidates, showAgentsNotFound)
+
+function renderAgentListItem(file: AgentFileInfo): string {
+	return `- \`${file.path}\` [${file.level}]`;
+}
+
 // ─── Model helpers ─────────────────────────────────────────────────────────────
 
 function extractModelInfo(model: Model | undefined): { id: string; name: string; provider: string } | undefined {
@@ -117,10 +167,11 @@ function extractModelInfo(model: Model | undefined): { id: string; name: string;
 // ─── Overview ──────────────────────────────────────────────────────────────────
 
 function showOverview(
-	commands: SlashCommandInfo[],
-	tools: ImportedToolInfo[],
-	themes: CoreThemeInfo[],
 	model: { id: string; name: string; provider: string } | undefined,
+	themes: CoreThemeInfo[],
+	agents: AgentFileInfo[] | undefined,
+	tools: ImportedToolInfo[],
+	commands: SlashCommandInfo[],
 	width: number,
 ): string {
 	const lines: string[] = [
@@ -145,9 +196,19 @@ function showOverview(
 		return result;
 	};
 
-	lines.push(...sectionLines("Commands", grouped.builtin, grouped.builtin.length));
-	lines.push(...sectionLines("Skills", grouped.skills, grouped.skills.length));
-	lines.push(...sectionLines("Prompt Templates", grouped.prompts, grouped.prompts.length));
+	if (themes.length > 0) {
+		lines.push("", `## **Themes** (${themes.length})`);
+		for (const theme of themes) {
+			lines.push(`- \`${theme.name}\`${theme.path ? SEPARATOR + theme.path : " [built-in]"}`);
+		}
+	}
+
+	if (agents && agents.length > 0) {
+		lines.push("", `## **Agent Context Files** (${agents.length})`);
+		for (const file of agents) {
+			lines.push(renderAgentListItem(file));
+		}
+	}
 
 	if (tools.length > 0) {
 		lines.push("", `## **Tools** (${tools.length})`);
@@ -159,12 +220,9 @@ function showOverview(
 		}
 	}
 
-	if (themes.length > 0) {
-		lines.push("", `## **Themes** (${themes.length})`);
-		for (const theme of themes) {
-			lines.push(`- \`${theme.name}\`${theme.path ? SEPARATOR + theme.path : " [built-in]"}`);
-		}
-	}
+	lines.push(...sectionLines("Skills", grouped.skills, grouped.skills.length));
+	lines.push(...sectionLines("Commands", grouped.builtin, grouped.builtin.length));
+	lines.push(...sectionLines("Prompt Templates", grouped.prompts, grouped.prompts.length));
 
 	return lines.join("\n");
 }
@@ -278,6 +336,97 @@ function showCandidates(matches: FoundItem[], width: number): string {
 	return lines.join("\n");
 }
 
+// ─── Agent Context Files ───────────────────────────────────────────────────────
+
+function showAgentOverview(width: number, cwd: string, agents?: AgentFileInfo[]): string {
+	if (!agents || agents.length === 0) {
+		return "**No agent context files loaded.**\n\n"
+			+ "Context files (AGENTS.md, CLAUDE.md) contribute to the system prompt.\n\n"
+			+ "To set up agent context files:\n"
+			+ "  1. Create `AGENTS.md` or `CLAUDE.md` in your project root\n"
+			+ "  2. Global files can be placed in `~/.pi/AGENTS.md`\n\n"
+			+ "If you see this message after having agent files, try `/reload`.";
+	}
+
+	const lines: string[] = [
+		`## **Agent Context Files** (${agents.length})`,
+		"",
+	];
+
+	// Group by level
+	const byLevel = new Map<string, AgentFileInfo[]>();
+	for (const file of agents) {
+		const level = file.path === cwd ? "Workspace" : file.level;
+		const list = byLevel.get(level) ?? [];
+		list.push(file);
+		byLevel.set(level, list);
+	}
+
+	const levelOrder = ["Global", "Workspace", "Ancestor"];
+	let firstInSection = true;
+	for (const level of levelOrder) {
+		const list = byLevel.get(level);
+		if (!list || list.length === 0) continue;
+		if (!firstInSection) lines.push("");
+		lines.push(`**${level}:**`);
+		for (const file of list) {
+			lines.push(renderAgentListItem(file));
+		}
+		firstInSection = false;
+	}
+
+	lines.push("");
+	lines.push("_Files are captured from the current system prompt. Run `/reload` to refresh after changes._");
+	return lines.join("\n");
+}
+
+function showAgentDetail(file: AgentFileInfo): string {
+	const lines: string[] = [
+		`## **Agent Context File:** \`${file.path}\``,
+		"",
+		`**Level:** ${file.level}`,
+		"",
+		"**Content:**",
+	];
+	if (file.content) {
+		lines.push("```markdown");
+		lines.push(file.content);
+		if (!file.content.endsWith("\n")) lines.push("");
+		lines.push("```");
+	} else {
+		lines.push("_Empty file._");
+	}
+	return lines.join("\n");
+}
+
+function showAgentCandidates(matches: AgentFileInfo[]): string {
+	const lines: string[] = ["**Multiple agent context file matches found:**", ""];
+	for (const file of matches) {
+		lines.push(renderAgentListItem(file));
+	}
+	lines.push("");
+	lines.push("Try `/show agent_context <exact_path>` for details.");
+	return lines.join("\n");
+}
+
+function showAgentsNotFound(query: string, allFiles: AgentFileInfo[]): string {
+	if (allFiles.length === 0) {
+		return `**No agent context file matching "${query}" found.**\n\n` +
+			"**No agent context files loaded.**\n" +
+			"Create `AGENTS.md` or `CLAUDE.md` in your project root or `~/.pi/`.";
+	}
+
+	const lines: string[] = [
+		`**No agent context file matching "${query}" found.**`,
+		"",
+		"**Available agent context files:**",
+	];
+	for (const file of allFiles) {
+		lines.push(renderAgentListItem(file));
+	}
+	return lines.join("\n");
+}
+
 // ─── Not Found ─────────────────────────────────────────────────────────────────
 
 function showNotFound(
@@ -343,10 +492,53 @@ function handleShow(
 	const width = Math.max(MIN_DESC_WIDTH, getTerminalWidth() - WIDTH_PADDING);
 	const model = extractModelInfo(ctx.model as Model | undefined);
 
-	const query = _args.trim().toLowerCase();
+	// Agent files: use cached (from before_agent_start), or parse & cache.
+	const cwd = ctx.cwd;
+	let agents = cachedAgentFiles;
+	if (agents === undefined) {
+		try {
+			agents = parseAgentFiles(ctx.getSystemPrompt());
+			cachedAgentFiles = agents;
+		} catch {
+			agents = [];
+		}
+	}
+
+	const rawQuery = _args.trim();
+	const query = rawQuery.toLowerCase();
 
 	if (!query) {
-		return showOverview(commands, tools, themes, model, width);
+		return showOverview(model, themes, agents, tools, commands, width);
+	}
+
+	// ─── Agent context files ────────────────────────────────────────────────
+	if (query === "agent_context") {
+		return showAgentOverview(width, cwd, agents);
+	}
+
+	if (query.startsWith("agent_context ")) {
+		const rawSubquery = rawQuery.slice("agent_context ".length);
+		if (!rawSubquery) {
+			return showAgentOverview(width, cwd, agents);
+		}
+		const sub = rawSubquery.toLowerCase();
+		const subBasename = sub.split("/").pop() ?? sub;
+		if (!agents || agents.length === 0) {
+			return showAgentsNotFound(rawSubquery, []);
+		}
+		const agentMatches = agents.filter((f) => {
+			const fp = f.path.toLowerCase();
+			const basename = f.path.split("/").pop()?.toLowerCase() ?? f.path.toLowerCase();
+			// Match if stored path contains subquery OR user's path contains stored path OR basenames match
+			return fp.includes(sub) || sub.includes(fp) || basename === subBasename;
+		});
+		if (agentMatches.length === 0) {
+			return showAgentsNotFound(rawSubquery, agents);
+		}
+		if (agentMatches.length === 1) {
+			return showAgentDetail(agentMatches[0]);
+		}
+		return showAgentCandidates(agentMatches);
 	}
 
 	const found = findByName(commands, tools, query);
@@ -390,5 +582,20 @@ export default function piShowExtension(pi: ExtensionAPI): void {
 			);
 		},
 		getArgumentCompletions: () => null,
+	});
+
+	// Capture agent context files when the agent loop starts.
+	// This provides structured access to contextFiles.
+	// If the event never fires (no agent loop yet), the handler
+	// falls back to parsing ctx.getSystemPrompt().
+	pi.on("before_agent_start", (event: unknown) => {
+		const e = event as Record<string, unknown>;
+		const opts = e.systemPromptOptions as Record<string, unknown> | undefined;
+		const files = opts?.contextFiles as Array<{ path: string; content: string }> | undefined;
+		cachedAgentFiles = files?.map((f) => ({
+			path: f.path,
+			level: inferAgentFileLevel(f.path),
+			content: f.content,
+		})) ?? [];
 	});
 }
